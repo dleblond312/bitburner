@@ -1,3 +1,5 @@
+import { NS } from '@ns';
+
 const HACK_SCRIPT = 'hack';
 const GROW_SCRIPT = 'grow';
 const WEAK_SCRIPT = 'weak';
