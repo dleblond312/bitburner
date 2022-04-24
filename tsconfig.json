@@ -1,0 +1,40 @@
+{
+  "include": [
+    "NetscriptDefinitions.d.ts",
+    "global.d.ts",
+    "src/**/*", "dist/mk1",
+  ],
+  "compilerOptions": {
+    "module": "esnext",
+    "target": "esnext",
+    "moduleResolution": "node",
+    "noImplicitReturns": true,
+    "noImplicitThis": true,
+    "esModuleInterop": true,
+    "inlineSourceMap": true,
+    "noImplicitAny": true,
+    "noImplicitOverride": true,
+    "noPropertyAccessFromIndexSignature": true,
+    "noUncheckedIndexedAccess": true,
+    "strictBindCallApply": true,
+    "strictPropertyInitialization": true,
+    "strictNullChecks": true,
+    "forceConsistentCasingInFileNames": true,
+    "experimentalDecorators": true,
+    "importHelpers": true,
+    "resolveJsonModule": true,
+    "sourceRoot": "http://localhost:8000/sources/",
+    "strict": true,
+    "rootDir": "src/",
+    "outDir": "dist/",
+    "baseUrl": "src/",
+    "paths": {
+      "/*": [
+        "*"
+      ],
+      "@ns": [
+        "../NetscriptDefinitions.d.ts"
+      ]
+    }
+  }
+}

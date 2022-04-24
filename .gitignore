@@ -1,0 +1,4 @@
+node_modules/
+NetscriptDefinitions.d.ts
+bitburner-vscode-workspace.code-workspace
+dist/
