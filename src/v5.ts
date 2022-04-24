@@ -1,6 +1,6 @@
-const HACK_SCRIPT = 'hack.js';
-const GROW_SCRIPT = 'grow.js';
-const WEAK_SCRIPT = 'weak.js';
+const HACK_SCRIPT = 'hack';
+const GROW_SCRIPT = 'grow';
+const WEAK_SCRIPT = 'weak';
 
 const TOR_SCRIPT = 'tor.js';
 const HOME_UPGRADE_SCRIPT = 'home.js';
@@ -57,7 +57,7 @@ export class NodeInfo {
 	 * @param {string} hostname
 	 * @param {number} total_ram
 	 * @param {boolean} can_schedule
-	 * @param {*} threads
+	 * @param {Threads} threads
 	 * @param {number} available_money
 	 * @param {number} delta_security_level
 	 * @param {number} max_money
@@ -102,14 +102,14 @@ export class Operation {
 let total_scheduled_threads: Threads = new Threads();
 
 let time_functions: {
-	'hack.js': (s: string) => number,
-	'grow.js': (s: string) => number,
-	'weak.js': (s: string) => number,
+	hack: (s: string) => number,
+	grow: (s: string) => number,
+	weak: (s: string) => number,
 };
 
 let security_impact_functions: {
-	'hack.js': (threads:number) => number,
-	'grow.js': (threads:number) => number,
+	hack: (threads:number) => number,
+	grow: (threads:number) => number,
 };
 
 let operations: Array<Operation> = [];
@@ -131,14 +131,14 @@ export async function main(ns: NS): Promise<void> {
 
 
 	time_functions = {
-		'hack.js': ns.getHackTime,
-		'weak.js': ns.getWeakenTime,
-		'grow.js': ns.getGrowTime,
+		hack: ns.getHackTime,
+		weak: ns.getWeakenTime,
+		grow: ns.getGrowTime,
 	};
 
 	security_impact_functions = {
-		'hack.js': ns.hackAnalyzeSecurity,
-		'grow.js': ns.growthAnalyzeSecurity,
+		hack: ns.hackAnalyzeSecurity,
+		grow: ns.growthAnalyzeSecurity,
 	};
 
 	let root_list = [];
@@ -152,9 +152,9 @@ export async function main(ns: NS): Promise<void> {
 		const op_list: NodeInfo[] = [];
 
 		const total_tracked = {
-			'hack.js': 0,
-			'weak.js': 0,
-			'grow.js': 0,
+			hack: 0,
+			weak: 0,
+			grow: 0,
 		};
 
 		total_scheduled_threads = {
@@ -439,7 +439,7 @@ async function schedule_breach(ns: NS, breach_list: NodeInfo[]): Promise<void> {
  * @param {Array<NodeInfo>} rooted_list
  * @param {Array<NodeInfo>} target_list
  */
-async function schedule_script(ns: NS, scripts: ('hack.js' | 'weak.js' | 'grow.js')[], rooted_list: NodeInfo[], target_list: NodeInfo[]): Promise<void> {
+async function schedule_script(ns: NS, scripts: ('hack' | 'weak' | 'grow')[], rooted_list: NodeInfo[], target_list: NodeInfo[]): Promise<void> {
 	let loop_scripts = [...scripts];
 
 	while (target_list.length > 0 && rooted_list.length > 0) {
@@ -450,7 +450,7 @@ async function schedule_script(ns: NS, scripts: ('hack.js' | 'weak.js' | 'grow.j
 		let num_threads: number;
 
 		if (!ns.isRunning(script_name, source.hostname)) {
-			await ns.scp(script_name, 'home', source.hostname);
+			await ns.scp(script_name + '.js', 'home', source.hostname);
 		}
 
 		const available_memory = source.total_ram - ns.getServerUsedRam(source.hostname);
@@ -469,7 +469,7 @@ async function schedule_script(ns: NS, scripts: ('hack.js' | 'weak.js' | 'grow.j
 		}
 
 		if (num_threads > 0) {
-			if (ns.exec(script_name, source.hostname, num_threads, target.hostname, Date.now(), num_threads)) {
+			if (ns.exec(script_name + '.js', source.hostname, num_threads, target.hostname, Date.now(), num_threads)) {
 				if (time_functions[script_name]) {
 					// eslint-disable-next-line @typescript-eslint/no-unsafe-call
 					operations.push(new Operation(script_name, target.hostname, source.hostname, num_threads, Date.now() + time_functions[script_name](target.hostname)));
