@@ -42,21 +42,22 @@ module.exports = {
         '@typescript-eslint/explicit-function-return-type': 'warn',
         '@typescript-eslint/no-explicit-any': 'error',
         '@typescript-eslint/no-unsafe-call': 'error',
-        '@typescript-eslint/no-unused-vars': 'warn',
+        '@typescript-eslint/no-unused-vars': 'off',
         '@typescript-eslint/require-await': 'warn',
-        '@typescript-eslint/restrict-plus-operands': 'error',
-        '@typescript-eslint/strict-boolean-expressions': 'error',
+        '@typescript-eslint/restrict-plus-operands': 'off',
+        '@typescript-eslint/strict-boolean-expressions': 'off',
         '@typescript-eslint/no-shadow': 'error',
         'arrow-parens': [
             'off',
             'always'
         ],
         'dot-notation': 'error',
-        'import/no-default-export': 'error',
-        'import/order': 'error',
+        'import/no-default-export': 'off',
+        'import/order': 'off',
         'no-console': 'off',
+        'no-empty': 'off',
         'no-empty-function': 'off',
-        'no-unused-expressions': 'error',
+        'no-unused-expressions': 'off',
         'no-underscore-dangle': [
             'error',
             {
