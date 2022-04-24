@@ -444,13 +444,14 @@ async function schedule_script(ns: NS, scripts: ('hack' | 'weak' | 'grow')[], ro
 
 	while (target_list.length > 0 && rooted_list.length > 0) {
 		let script_name = loop_scripts[0];
+		const file_name = script_name + '.js';
 		const target = target_list[0];
 		const source = rooted_list[0];
-		const script_ram = ns.getScriptRam(script_name);
+		const script_ram = ns.getScriptRam(file_name);
 		let num_threads: number;
 
-		if (!ns.isRunning(script_name, source.hostname)) {
-			await ns.scp(script_name + '.js', 'home', source.hostname);
+		if (!ns.isRunning(file_name, source.hostname)) {
+			await ns.scp(file_name, 'home', source.hostname);
 		}
 
 		const available_memory = source.total_ram - ns.getServerUsedRam(source.hostname);
@@ -469,7 +470,7 @@ async function schedule_script(ns: NS, scripts: ('hack' | 'weak' | 'grow')[], ro
 		}
 
 		if (num_threads > 0) {
-			if (ns.exec(script_name + '.js', source.hostname, num_threads, target.hostname, Date.now(), num_threads)) {
+			if (ns.exec(file_name, source.hostname, num_threads, target.hostname, Date.now(), num_threads)) {
 				if (time_functions[script_name]) {
 					// eslint-disable-next-line @typescript-eslint/no-unsafe-call
 					operations.push(new Operation(script_name, target.hostname, source.hostname, num_threads, Date.now() + time_functions[script_name](target.hostname)));
