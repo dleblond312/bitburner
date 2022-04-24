@@ -6,7 +6,7 @@ const WEAK_SCRIPT = 'weak';
 
 const TOR_SCRIPT = 'tor.js';
 const HOME_UPGRADE_SCRIPT = 'home.js';
-const PURCHASE_SCRIPT = 'purchase.js';
+const PURCHASE_PROGRAM_SCRIPT = 'purchase_program.js';
 const PURCHASE_SERVER_SCRIPT = 'purchase_server.js';
 const FACTION_SCRIPT = 'factions.js';
 const AUGMENT_SCRIPT = 'augment.js';
@@ -206,8 +206,8 @@ export async function main(ns: NS): Promise<void> {
 		if (ns.singularity.getDarkwebPrograms().length > 0) {
 			for(let i = 0; i < programs.length; i++) {
 				const program = programs[i];
-				if (program && !ns.fileExists(program.name, 'home') && ns.singularity.getDarkwebProgramCost(program.name) < ns.getPlayer().money && !ns.scriptRunning(PURCHASE_SCRIPT, 'home')) {
-					if(ns.exec(PURCHASE_SCRIPT, 'home', 1, program.name)) {
+				if (program && !ns.fileExists(program.name, 'home') && ns.singularity.getDarkwebProgramCost(program.name) < ns.getPlayer().money && !ns.scriptRunning(PURCHASE_PROGRAM_SCRIPT, 'home')) {
+					if(ns.exec(PURCHASE_PROGRAM_SCRIPT, 'home', 1, program.name)) {
 						await ns.sleep(20);
 						break;
 					}
@@ -285,6 +285,7 @@ export async function main(ns: NS): Promise<void> {
 		await schedule_script(ns, [WEAK_SCRIPT], root_list, [new NodeInfo(true, false, 'foodnstuff', 0, true, skill_threads, 0, 0, 0)]);
 
 		await ns.sleep(200);
+		
 	} while (true);
 }
 
