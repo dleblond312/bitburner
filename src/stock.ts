@@ -31,7 +31,6 @@ export class StockSymbol {
 export async function main(ns: NS): Promise<void> {
 	ns.clearLog();
 	ns.disableLog('ALL');
-	ns.tail();
 
 	let corpus = 0;
 	const all_symbols = ns.stock.getSymbols();
