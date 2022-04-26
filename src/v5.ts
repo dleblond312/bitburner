@@ -22,6 +22,7 @@ const SCHEDULING_PORT = 2;
 const STOP_SCALING_PORT = 6;
 const PURCHASE_SERVER_PORT = 7;
 const NULL_PORT_DATA = 'NULL PORT DATA';
+const time_delta = 200;
 
 const programs: {name: string, level: number, ports: number}[] = [
 	{ name: 'Formulas.exe', level: 750, ports: 0 },
@@ -37,60 +38,30 @@ const programs: {name: string, level: number, ports: number}[] = [
 
 export class Threads {
 	public hack: number;
-	public hack_weak?: number;
 	public grow: number;
-	public grow_weak?: number;
 	public weak: number;
+	public available_threads?: number;
 }
 
 export class NodeInfo {
-	isRooted: boolean;
-	isOwned: boolean;
-	hostname: string;
-	total_ram: number;
-	can_schedule: boolean;
-	threads: Threads;
-	available_money: number;
-	delta_security_level: number;
-	max_money: number;
-	/**
-	 * @param {boolean} isRooted
-	 * @param {boolean} isOwned
-	 * @param {string} hostname
-	 * @param {number} total_ram
-	 * @param {boolean} can_schedule
-	 * @param {Threads} threads
-	 * @param {number} available_money
-	 * @param {number} delta_security_level
-	 * @param {number} max_money
-	 */
-	constructor(isRooted: boolean, isOwned: boolean, hostname: string, total_ram: number, can_schedule: boolean, threads: Threads, available_money: number, delta_security_level: number, max_money: number) {
-		this.isRooted = isRooted;
-		this.isOwned = isOwned;
-		this.hostname = hostname;
-		this.total_ram = total_ram;
-		this.can_schedule = can_schedule;
-		this.threads = threads;
-		this.available_money = available_money;
-		this.delta_security_level = delta_security_level;
-		this.max_money = max_money;
-	}
+	public isRooted: boolean;
+	public isOwned: boolean;
+	public hostname: string;
+	public total_ram: number;
+	public can_schedule: boolean;
+	public threads: Threads;
+	public available_money: number;
+	public delta_security_level: number;
+	public max_money: number;
 }
 
 export class Operation {
-	script: string;
-	target: string;
-	hostname: string;
-	threads: number;
-	end_time: number;
+	public script: string;
+	public target: string;
+	public hostname: string;
+	public threads: number;
+	public end_time: number;
 
-	/**
-	 * @param {string} script
-	 * @param {string} target
-	 * @param {string} hostname
-	 * @param {number} threads
-	 * @param {number} end_time
-	 */
 	constructor(script: string, target: string, hostname: string, threads: number, end_time: number) {
 		this.script = script;
 		this.target = target;
@@ -100,6 +71,15 @@ export class Operation {
 	}
 }
 
+export class FutureOperation {
+	public node: NodeInfo;
+	public script: 'hack' | 'grow' | 'weak';
+	public threads: number;
+	public execute_after: number;
+	
+}
+
+let future_operations: FutureOperation[] = [];
 
 let total_scheduled_threads: Threads = new Threads();
 
@@ -109,18 +89,11 @@ let time_functions: {
 	weak: (s: string) => number,
 };
 
-let security_impact_functions: {
-	hack: (threads:number) => number,
-	grow: (threads:number) => number,
-};
-
 let operations: Array<Operation> = [];
 
-let should_buy_more_memory = false;
-
-const awaiting_exit = false;
-
 let pservers: Array<string>;
+
+let max_script_cost: number;
 
 const date_format = Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: 'numeric', second: 'numeric', fractionalSecondDigits: 3 });
 const currency_format = Intl.NumberFormat('en', { notation: 'compact', maximumSignificantDigits: 4, style: 'currency', currency: 'USD' });
@@ -130,26 +103,23 @@ export async function main(ns: NS): Promise<void> {
 	ns.disableLog('ALL');
 	ns.clearLog();
 
-
-
 	time_functions = {
 		hack: ns.getHackTime,
 		weak: ns.getWeakenTime,
 		grow: ns.getGrowTime,
 	};
 
-	security_impact_functions = {
-		hack: ns.hackAnalyzeSecurity,
-		grow: ns.growthAnalyzeSecurity,
-	};
-
-	let root_list = [];
+	let root_list: NodeInfo[] = [];
+	let home_list: NodeInfo[] = [];
+	
+	const future_list: NodeInfo[] = [];
 
 	let has_traveled = false;
 
 	await ns.writePort(EVENT_PORT, `--- SCRIPT START: ${date_format.format(new Date())}---`);
 	ns.tail();
 	do {
+		max_script_cost = Math.max(ns.getScriptRam(HACK_SCRIPT+'.js', 'home'), ns.getScriptRam(GROW_SCRIPT+'.js', 'home'), ns.getScriptRam(WEAK_SCRIPT+'.js', 'home'));
 		let target_list: NodeInfo[] = [];
 		const op_list: NodeInfo[] = [];
 
@@ -165,7 +135,7 @@ export async function main(ns: NS): Promise<void> {
 			grow: 0,
 		};
 
-		pservers = ns.scan('home').filter((server) => { return server.indexOf('pserv') > -1; }).concat(['home']);
+		pservers = ns.scan('home').filter((server) => { return server.indexOf('pserv') > -1; });
 
 		// Generate list of hosts by crawling the network
 		const hosts = await crawl_network(ns, 'home', {}, 0);
@@ -177,6 +147,7 @@ export async function main(ns: NS): Promise<void> {
 
 		// Run analysis of every server in the network
 		root_list = [];
+		home_list = [];
 		for (let i = 0; i < hosts.length; i++) {
 			const host = hosts[i];
 			const server_info = analyze_server(ns, host);
@@ -184,13 +155,23 @@ export async function main(ns: NS): Promise<void> {
 			if (server_info.isRooted) {
 				if (!server_info.isOwned) {
 					if (server_info.max_money > 0 && server_info.available_money > 0) {
-						target_list.push(server_info);
+						if(calc_security_delta(ns, server_info.hostname) <= 1) {
+							if(!future_list.some((s) => { return s.hostname == server_info.hostname;})) {
+								future_list.push(server_info);
+							}
+						} else {
+							target_list.push(server_info);
+						}
 					}
 				}
 
 				// All nodes with root access
 				op_list.push(server_info);
-				root_list.push(server_info);
+				if(server_info.hostname == 'home') {
+					home_list.push(server_info);
+				} else {
+					root_list.push(server_info);
+				}
 			} else {
 				if (ns.getPlayer().hacking >= ns.getServer(host).requiredHackingSkill && ns.getServer(host).numOpenPortsRequired <= port_count) {
 					await schedule_breach(ns, [server_info]);
@@ -235,7 +216,6 @@ export async function main(ns: NS): Promise<void> {
 				await ns.sleep(20);
 			}
 			if (ns.exec(AUGMENT_SCRIPT, 'home', 1)) {
-				ns.tail(AUGMENT_SCRIPT, 'home');
 				await ns.sleep(20);
 			}
 
@@ -244,6 +224,7 @@ export async function main(ns: NS): Promise<void> {
 					await ns.sleep(20);
 				}
 			} else {
+				// 32 billion needed
 				if (ns.getPlayer().money > 3.2e10) {
 					if (ns.exec(STOCK_PURCHASE_SCRIPT, 'home', 1)) {
 						await ns.sleep(10);
@@ -252,12 +233,12 @@ export async function main(ns: NS): Promise<void> {
 			}
 		}
 
-		// Scale out will mark smallest node for deletion
-		if (should_buy_more_memory || awaiting_exit) {
-			should_buy_more_memory = await scale_out_nodes(ns, op_list);
+		// Stop scaling for last hour before augment
+		if (ns.peek(STOP_SCALING_PORT) == NULL_PORT_DATA) {
+			await scale_out_nodes(ns, op_list);
 		}
 
-		target_list = target_list.sort((a, b) => { return ns.getServerMinSecurityLevel(a.hostname) - ns.getServerMinSecurityLevel(b.hostname); });
+		target_list = target_list.sort((a, b) => { return a.delta_security_level - b.delta_security_level; });
 		root_list = root_list.filter((node) => { return node.can_schedule; }).sort((a, b) => { return b.total_ram - a.total_ram; });
 
 		// Track all operations in progress
@@ -270,21 +251,110 @@ export async function main(ns: NS): Promise<void> {
 			}
 		});
 
-		await schedule_script(ns, [GROW_SCRIPT, HACK_SCRIPT, WEAK_SCRIPT], root_list, target_list);
+
+		if(pservers.length == ns.getPurchasedServerLimit() && ns.getServerMaxRam('home') >= 65536) {
+			// execute a future scheduled node
+			const reducer_results = future_operations.reduce((results, future_op) => {
+				const n = Date.now();
+				if(future_op.execute_after < n) {
+					results.execute_list.push(future_op);
+				} else {
+					results.future_operations.push(future_op);
+				}
+				return results;
+			}, { future_operations: <FutureOperation[]>[], execute_list: <FutureOperation[]>[]});
+			future_operations = reducer_results.future_operations;
+
+			reducer_results.execute_list = reducer_results.execute_list.sort((a, b) => { return b.execute_after - a.execute_after; });
+			for(let i = 0; i < reducer_results.execute_list.length; i++) {
+				const f_op = reducer_results.execute_list[i];
+				const target = Object.assign({}, f_op.node);
+				target.threads = {
+					grow: f_op.script == GROW_SCRIPT ? f_op.threads : 0,
+					weak: f_op.script == WEAK_SCRIPT ? f_op.threads : 0,
+					hack: f_op.script == HACK_SCRIPT ? f_op.threads : 0,
+				};
+				const future_target_list = [target];
+
+				await schedule_script(ns, [f_op.script], root_list, future_target_list);
+				if(future_target_list.length != 0) {
+					future_operations.push(reducer_results.execute_list[i]);
+				}
+			}
+
+			await schedule_script(ns, [GROW_SCRIPT, WEAK_SCRIPT], home_list, target_list);
+			const available_threads = root_list.reduce((sum, node) => {
+				return sum + node.threads.available_threads;
+			}, 0);
+
+			const future_queued_threads = future_operations.reduce((sum, future_op) => {
+				return sum + future_op.threads;
+			},0);
+
+			// plan future nodes based on available memory
+			for(let i = 0; i < future_list.length; i++) {
+				const node = future_list[i];
+				const available_money_ratio = 0.1;
+				const grow_multiplier = 1 / available_money_ratio;
+				const grow_threads = Math.ceil(ns.growthAnalyze(node.hostname, grow_multiplier));
+				const grow_weak_threads = Math.ceil(Math.max(grow_threads / 0.05, 0));
+				const hack_threads = Math.floor(ns.hackAnalyzeThreads(node.hostname, node.max_money*(1-available_money_ratio)));
+				const hack_weak_threads = Math.ceil(Math.max(hack_threads / 0.05, 0));
+
+				const grow_duration = ns.getGrowTime(node.hostname);
+				const hack_duration = ns.getHackTime(node.hostname);
+				const weak_duration = ns.getWeakenTime(node.hostname);
+				const max_duration = Math.max(grow_duration, hack_duration, weak_duration);
+				const min_duration = Math.min(grow_duration, hack_duration, weak_duration);
+				const now = Date.now();
+
+				const new_future_threads = grow_threads + grow_weak_threads + hack_threads + hack_weak_threads;
+
+				const n = Date.now();
+				if(future_operations.some((f_op) => { return f_op.node.hostname == node.hostname && n + min_duration + (time_delta*5) < f_op.execute_after; })) {
+					continue;
+				}
+
+				if(new_future_threads + future_queued_threads < available_threads*0.9 && max_duration < 2*60*1000 && new_future_threads < (available_threads-future_queued_threads)*0.25) {
+					future_operations.push({
+						node: node,
+						script: GROW_SCRIPT,
+						threads: grow_threads,
+						execute_after: now + max_duration - grow_duration + time_delta,
+					});
+					future_operations.push({
+						node: node,
+						script: WEAK_SCRIPT,
+						threads: grow_weak_threads,
+						execute_after: now + max_duration - weak_duration + (time_delta*2),
+					});
+					future_operations.push({
+						node: node,
+						script: HACK_SCRIPT,
+						threads: hack_threads,
+						execute_after: now + max_duration - hack_duration + (time_delta*3),
+					});
+					future_operations.push({
+						node: node,
+						script: WEAK_SCRIPT,
+						threads: hack_weak_threads,
+						execute_after: now + max_duration - weak_duration + (time_delta*4),
+					});
+				} else {
+					await schedule_script(ns, [HACK_SCRIPT, GROW_SCRIPT, WEAK_SCRIPT], home_list, [node]);
+				}
+			}
+		} else {
+			// low resources mode
+			await schedule_script(ns, [HACK_SCRIPT, GROW_SCRIPT, WEAK_SCRIPT], root_list.concat(home_list), future_list.concat(target_list));
+		}
+
 
 		if (total_scheduled_threads[HACK_SCRIPT] > 0 || total_scheduled_threads[WEAK_SCRIPT] > 0 || total_scheduled_threads[GROW_SCRIPT] > 0) {
 			ns.print(`Prev: {H:${total_tracked[HACK_SCRIPT].toFixed()} (+${total_scheduled_threads[HACK_SCRIPT]}), W:${total_tracked[WEAK_SCRIPT].toFixed()} (+${total_scheduled_threads[WEAK_SCRIPT]}), G:${total_tracked[GROW_SCRIPT].toFixed()} (+${total_scheduled_threads[GROW_SCRIPT]})}`);
 		}
 
-		if (root_list.length == 0 && !should_buy_more_memory && ns.peek(STOP_SCALING_PORT) == NULL_PORT_DATA) {
-			ns.print('Out of nodes, scaling up');
-			should_buy_more_memory = true;
-		}
-		const skill_threads = new Threads();
-		skill_threads[WEAK_SCRIPT] = 1e10;
-		await schedule_script(ns, [WEAK_SCRIPT], root_list, [new NodeInfo(true, false, 'foodnstuff', 0, true, skill_threads, 0, 0, 0)]);
-
-		await ns.sleep(200);
+		await ns.sleep(20);
 		
 	} while (true);
 }
@@ -296,7 +366,7 @@ export async function main(ns: NS): Promise<void> {
  */
 async function scale_out_nodes(ns: NS, rooted_list: NodeInfo[]): Promise<boolean> {
 	if (ns.getPurchasedServerLimit() > pservers.length) {
-		if(ns.exec(PURCHASE_SERVER_SCRIPT, 'home', 1)) {
+		if(ns.getPlayer().money > 1e5 && ns.exec(PURCHASE_SERVER_SCRIPT, 'home', 1)) {
 			await ns.sleep(20);
 		} 
 	} else {
@@ -307,9 +377,6 @@ async function scale_out_nodes(ns: NS, rooted_list: NodeInfo[]): Promise<boolean
 		// Find the smallest node and the highest ram
 		for (let i = 0; i < pservers.length; i++) {
 			const p_serv = pservers[i];
-			if (p_serv == 'home') {
-				continue;
-			}
 			if (min_pserv_ram > ns.getServerMaxRam(p_serv)) {
 				min_pserv = p_serv;
 				min_pserv_ram = ns.getServerMaxRam(p_serv);
@@ -342,7 +409,7 @@ async function scale_out_nodes(ns: NS, rooted_list: NodeInfo[]): Promise<boolean
 
 
 function is_owned(ns: NS, host: string): boolean {
-	return pservers.filter((owned) => { return owned == host; }).length > 0;
+	return host == 'home' || pservers.filter((owned) => { return owned == host; }).length > 0;
 }
 
 /**
@@ -371,16 +438,11 @@ async function crawl_network(ns: NS, node: string, node_list: Record<string, unk
 	return Object.keys(node_list);
 }
 
-/**
- * @param {NS} ns
- * @returns {NodeInfo}
- */
 function analyze_server(ns: NS, host: string): NodeInfo {
 	let hack_threads_required = 0;
 	let grow_threads_required = 0;
 
 	const isRooted = ns.getServer(host).hasAdminRights;
-
 	const total_ram = ns.getServer(host).maxRam;
 	const isOwned = is_owned(ns, host);
 
@@ -393,21 +455,29 @@ function analyze_server(ns: NS, host: string): NodeInfo {
 	if (!isOwned && available_money > 0 && delta_security_level < 2) {
 		const grow_multiplier = 1 / available_money_ratio;
 		grow_threads_required = grow_multiplier > 1 ? Math.ceil(ns.growthAnalyze(host, grow_multiplier)) : 0;
-		hack_threads_required = Math.floor(available_money_ratio > 0.95 ? ns.hackAnalyzeThreads(host, max_money * 0.9) : 0);
+		hack_threads_required = Math.floor(available_money_ratio > 0 ? ns.hackAnalyzeThreads(host, max_money * (available_money_ratio * 0.9)) : 0);
 	}
 
-	const threads = new Threads();
-	threads.weak = weak_threads_required;
-	threads.grow = grow_threads_required;
-	threads.hack = hack_threads_required;
+	const threads: Threads = {
+		hack: hack_threads_required,
+		grow: grow_threads_required,	
+		weak: weak_threads_required,
+		available_threads: Math.floor((total_ram - ns.getServer(host).ramUsed) / max_script_cost),
+	};
 
-	const info = new NodeInfo(isRooted, isOwned, host, total_ram, true, threads, available_money, delta_security_level, max_money);
-	return info;
+	return {
+		isRooted: isRooted,
+		isOwned: isOwned,
+		hostname: host,
+		total_ram: total_ram,
+		can_schedule: true,
+		threads: threads,
+		available_money: available_money,
+		delta_security_level: delta_security_level,
+		max_money: max_money,
+	};
 }
 
-/** 
- * @param {NS} ns
- */
 function calc_security_delta(ns: NS, host: string): number {
 	const security_level = ns.getServerSecurityLevel(host);
 	const min_security_level = ns.getServerMinSecurityLevel(host);
@@ -415,11 +485,6 @@ function calc_security_delta(ns: NS, host: string): number {
 	return delta_security_level;
 }
 
-/** 
- * @param {NS} ns
- * @param {Array<NodeInfo>} breach_list
- * @returns {Promise<Array<NodeInfo>>}
- */
 async function schedule_breach(ns: NS, breach_list: NodeInfo[]): Promise<void> {
 	while (breach_list.length > 0) {
 		const host = breach_list.shift();
@@ -475,18 +540,10 @@ async function schedule_script(ns: NS, scripts: ('hack' | 'weak' | 'grow')[], ro
 		if (num_threads > 0) {
 			if (ns.exec(file_name, source.hostname, num_threads, target.hostname, Date.now(), num_threads)) {
 				if (time_functions[script_name]) {
-					// eslint-disable-next-line @typescript-eslint/no-unsafe-call
 					operations.push(new Operation(script_name, target.hostname, source.hostname, num_threads, Date.now() + time_functions[script_name](target.hostname)));
 				}
 				total_scheduled_threads[script_name] += num_threads;
 				target.threads[script_name] -= num_threads;
-				if (security_impact_functions[script_name]) {
-					// eslint-disable-next-line @typescript-eslint/no-unsafe-call
-					const security_from_script = security_impact_functions[script_name](num_threads);
-					const weakened_threads_added = Math.ceil(Math.max(security_from_script / 0.05, 0));
-					target.threads[WEAK_SCRIPT] += weakened_threads_added;
-					// await schedule_script(ns, [WEAK_SCRIPT], [...rooted_list], [target]);
-				}
 			}
 		}
 		if (target.threads[script_name] < 1) {
